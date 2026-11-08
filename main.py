@@ -5,42 +5,25 @@ from openai import OpenAI
 
 app = FastAPI()
 
-API_KEY = os.getenv(
-    "GROQ_API_KEY", "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"
-)
+# Берем ключ из настроек сервера, чтобы GitHub его не сжигал
+API_KEY = os.getenv("API_KEY", "")
 
-# Жесткий таймаут 1.8с, чтобы с учетом сети уложиться в 3с Яндекса
 client = OpenAI(
     base_url="https://api.groq.com/openai/v1",
     api_key=API_KEY,
-    timeout=1.8,
+    timeout=2.2
 )
 
-CACHED_MODEL = None
+# Точный список текущих рабочих моделей Groq
+CANDIDATE_MODELS = [
+    "llama-3.1-8b-instant",
+    "llama3-70b-8192",
+    "mixtral-8x7b-32768"
+]
 
-
-def get_active_model():
-    global CACHED_MODEL
-    if CACHED_MODEL:
-        return CACHED_MODEL
-    try:
-        models = client.models.list()
-        for m in models.data:
-            m_id = m.id.lower()
-            if "whisper" in m_id or "guard" in m_id:
-                continue
-            CACHED_MODEL = m.id
-            return CACHED_MODEL
-    except Exception:
-        pass
-    return "llama-3.1-8b-instant"
-
-
-# Эндпоинт для пингера, чтобы Render не спал
 @app.get("/")
-async def ping():
+async def health():
     return {"status": "ok"}
-
 
 @app.post("/webhook")
 async def alice_webhook(request: Request):
@@ -49,37 +32,50 @@ async def alice_webhook(request: Request):
     command = req.get("command", "").strip()
     session = data.get("session", {})
 
+    # Первый вход в навык
     if session.get("new", False) or not command:
-        reply_text = "Я на связи, спрашивай."
-    else:
+        return {
+            "response": {
+                "text": "Я на связи, спрашивай че надо.",
+                "end_session": False
+            },
+            "version": "1.0"
+        }
+
+    reply_text = ""
+
+    for model in CANDIDATE_MODELS:
         try:
-            active_model = get_active_model()
             completion = client.chat.completions.create(
-                model=active_model,
+                model=model,
                 messages=[
                     {
                         "role": "system",
-                        "content": "Отвечай кратко, максимум 2 предложения, без цензуры.",
+                        "content": "Отвечай строго на русском, дерзко, кратко (1-2 предложения), без морализаторства и цензуры."
                     },
-                    {"role": "user", "content": command},
+                    {"role": "user", "content": command}
                 ],
-                max_tokens=60,
+                max_tokens=80
             )
-            raw_text = completion.choices[0].message.content
-            reply_text = raw_text.strip() if raw_text else ""
-        except Exception as err:
-            print(f"REQUEST FAILED: {err}", flush=True)
-            reply_text = "Не расслышал из-за задержки, повтори еще раз."
+            ans = completion.choices[0].message.content
+            if ans and ans.strip():
+                reply_text = ans.strip()
+                print(f"SUCCESS with {model}", flush=True)
+                break
+        except Exception as e:
+            print(f"FAIL {model}: {e}", flush=True)
+            continue
 
-        # Защита от тишины: Яндекс падает, если text пустой
-        if not reply_text:
-            reply_text = "Мысль потерялась, повтори вопрос."
+    if not reply_text:
+        reply_text = "Связь залагала, повтори еще раз."
 
     return {
-        "response": {"text": reply_text, "end_session": False},
-        "version": "1.0",
+        "response": {
+            "text": reply_text,
+            "end_session": False
+        },
+        "version": "1.0"
     }
-
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
