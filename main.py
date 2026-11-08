@@ -8,7 +8,7 @@ app = FastAPI()
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://openrouter.ai/api/v1")
-MODEL_NAME = os.getenv("MODEL", "google/gemini-2.0-flash-exp:free")
+MODEL_NAME = "deepseek/deepseek-chat:free"
 
 client = OpenAI(
     base_url=OPENAI_BASE_URL,
