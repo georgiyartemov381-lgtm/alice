@@ -18,7 +18,7 @@ async def alice_webhook(request: Request):
     command = req.get("command", "").strip()
     session = data.get("session", {})
 
-    # Приветствие при первом запуске навыка
+    # Приветствие при первом запуске навыка сикс севеен
     if session.get("new", False) or not command:
         reply_text = "Привет! Я нейросеть без цензуры. Задай мне любой вопрос."
     else:
@@ -33,7 +33,8 @@ async def alice_webhook(request: Request):
             )
             reply_text = completion.choices[0].message.content.strip()
         except Exception as e:
-            reply_text = "Ошибка обращения к нейросети. Попробуй еще раз чуть позже."
+    print(f"OPENROUTER ERROR: {e}", flush=True)
+    reply_text = f"Сбой API: {e}"
 
     return {
         "response": {
