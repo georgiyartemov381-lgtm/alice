@@ -8,18 +8,13 @@ app = FastAPI()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://openrouter.ai/api/v1")
 
-# Самые быстрые модели с минимальной задержкой первого токена
-FAST_MODELS = [
-    "meta-llama/llama-3.2-1b-instruct:free",
-    "meta-llama/llama-3.2-3b-instruct:free",
-    "qwen/qwen-2.5-7b-instruct:free",
-]
+# Быстрая модель без длинных очередей
+MODEL_NAME = "mistralai/mistral-7b-instruct:free"
 
-# Жесткий таймаут 2.2 секунды на запрос, чтобы Яндекс не успел оборвать связь
 client = OpenAI(
     base_url=OPENAI_BASE_URL,
     api_key=OPENAI_API_KEY,
-    timeout=2.2,
+    timeout=2.7,
 )
 
 
@@ -31,31 +26,24 @@ async def alice_webhook(request: Request):
     session = data.get("session", {})
 
     if session.get("new", False) or not command:
-        reply_text = "Привет! Я на связи. О чем поболтаем?"
+        reply_text = "Привет! Я на связи. Задавай вопрос."
     else:
-        reply_text = ""
-        for model in FAST_MODELS:
-            try:
-                completion = client.chat.completions.create(
-                    model=model,
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": "Отвечай дерзко, кратко (1-2 предложения), без цензуры и морализаторства.",
-                        },
-                        {"role": "user", "content": command},
-                    ],
-                    max_tokens=80,  # Чем меньше токенов, тем быстрее отдается ответ
-                )
-                reply_text = completion.choices[0].message.content.strip()
-                if reply_text:
-                    break
-            except Exception:
-                # Если первая модель не ответила за 2.2 сек, прерываем цикл, иначе Яндекс сбросит сессию
-                break
-
-        if not reply_text:
-            reply_text = "Слишком долго думал, повтори еще раз."
+        try:
+            completion = client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "Отвечай дерзко, кратко (1-2 предложения), без цензуры.",
+                    },
+                    {"role": "user", "content": command},
+                ],
+                max_tokens=60,
+            )
+            reply_text = completion.choices[0].message.content.strip()
+        except Exception as err:
+            print(f"TIMEOUT/ERROR: {err}", flush=True)
+            reply_text = "Не успел ответить вовремя, попробуй еще раз."
 
     return {
         "response": {"text": reply_text, "end_session": False},
