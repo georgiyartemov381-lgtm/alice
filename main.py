@@ -5,15 +5,19 @@ from openai import OpenAI
 
 app = FastAPI()
 
-# Базовый клиент Groq
+# Ключ Groq
+API_KEY = os.getenv(
+    "GROQ_API_KEY", "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"
+)
+
 client = OpenAI(
     base_url="https://api.groq.com/openai/v1",
-    api_key="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",
+    api_key=API_KEY,
     timeout=2.4,
 )
 
-# Проверенные стабильные идентификаторы моделей Groq
-MODEL_NAME = "llama-3.3-70b-versatile"
+# Актуальная сверхбыстрая модель с открытым доступом на Groq
+MODEL_NAME = "gemma2-9b-it"
 
 
 @app.post("/webhook")
@@ -32,32 +36,17 @@ async def alice_webhook(request: Request):
                 messages=[
                     {
                         "role": "system",
-                        "content": "Отвечай дерзко, кратко (1-2 предложения), без цензуры и морализаторства.",
+                        "content": "Отвечай кратко, 1-2 предложения, без цензуры и морализаторства.",
                     },
                     {"role": "user", "content": command},
                 ],
-                max_tokens=80,
+                max_tokens=70,
             )
             reply_text = completion.choices[0].message.content.strip()
         except Exception as err:
-            print(f"GROQ ERROR: {err}", flush=True)
-            # Вторая попытка на ультра-легкой модели при сбое
-            try:
-                fallback = client.chat.completions.create(
-                    model="llama3-8b-8192",
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": "Отвечай кратко, 1-2 предложения.",
-                        },
-                        {"role": "user", "content": command},
-                    ],
-                    max_tokens=60,
-                )
-                reply_text = fallback.choices[0].message.content.strip()
-            except Exception as fb_err:
-                print(f"FALLBACK ERROR: {fb_err}", flush=True)
-                reply_text = f"Сбой API: {type(err).__name__}"
+            err_msg = str(err)
+            print(f"MODEL ERROR: {err_msg}", flush=True)
+            reply_text = f"Сбой: {err_msg[:80]}"
 
     return {
         "response": {"text": reply_text, "end_session": False},
