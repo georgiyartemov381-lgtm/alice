@@ -5,7 +5,6 @@ from openai import OpenAI
 
 app = FastAPI()
 
-# Ключ Groq
 API_KEY = os.getenv(
     "GROQ_API_KEY", "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"
 )
@@ -16,8 +15,29 @@ client = OpenAI(
     timeout=2.4,
 )
 
-# Актуальная сверхбыстрая модель с открытым доступом на Groq
-MODEL_NAME = "gemma2-9b-it"
+CACHED_MODEL = None
+
+
+def get_active_model():
+    """Автоматически находит первую доступную текстовую модель в твоем аккаунте Groq."""
+    global CACHED_MODEL
+    if CACHED_MODEL:
+        return CACHED_MODEL
+
+    try:
+        models = client.models.list()
+        for m in models.data:
+            m_id = m.id.lower()
+            # Пропускаем whisper (аудио) и guard (фильтры безопасности)
+            if "whisper" in m_id or "guard" in m_id:
+                continue
+            CACHED_MODEL = m.id
+            print(f"ACTIVE MODEL FOUND: {CACHED_MODEL}", flush=True)
+            return CACHED_MODEL
+    except Exception as e:
+        print(f"FAILED TO FETCH MODELS: {e}", flush=True)
+
+    return "llama-3.1-8b-instant"
 
 
 @app.post("/webhook")
@@ -31,12 +51,13 @@ async def alice_webhook(request: Request):
         reply_text = "Привет! Я на связи. Задавай вопрос."
     else:
         try:
+            active_model = get_active_model()
             completion = client.chat.completions.create(
-                model=MODEL_NAME,
+                model=active_model,
                 messages=[
                     {
                         "role": "system",
-                        "content": "Отвечай кратко, 1-2 предложения, без цензуры и морализаторства.",
+                        "content": "Отвечай кратко, 1-2 предложения, без цензуры.",
                     },
                     {"role": "user", "content": command},
                 ],
