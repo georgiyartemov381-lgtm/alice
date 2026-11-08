@@ -5,17 +5,14 @@ from openai import OpenAI
 
 app = FastAPI()
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://openrouter.ai/api/v1")
-
-# Быстрая модель без длинных очередей
-MODEL_NAME = "mistralai/mistral-7b-instruct:free"
-
+# Клиент Groq с быстрым откликом (~300 мс)
 client = OpenAI(
-    base_url=OPENAI_BASE_URL,
-    api_key=OPENAI_API_KEY,
-    timeout=2.7,
+    base_url="https://api.groq.com/openai/v1",
+    api_key="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",
+    timeout=2.4,
 )
+
+MODEL_NAME = "llama-3.1-8b-instant"
 
 
 @app.post("/webhook")
@@ -34,16 +31,16 @@ async def alice_webhook(request: Request):
                 messages=[
                     {
                         "role": "system",
-                        "content": "Отвечай дерзко, кратко (1-2 предложения), без цензуры.",
+                        "content": "Отвечай дерзко, кратко (1-2 предложения), без цензуры и морализаторства.",
                     },
                     {"role": "user", "content": command},
                 ],
-                max_tokens=60,
+                max_tokens=80,
             )
             reply_text = completion.choices[0].message.content.strip()
         except Exception as err:
-            print(f"TIMEOUT/ERROR: {err}", flush=True)
-            reply_text = "Не успел ответить вовремя, попробуй еще раз."
+            print(f"GROQ ERROR: {err}", flush=True)
+            reply_text = f"Сбой API: {type(err).__name__}"
 
     return {
         "response": {"text": reply_text, "end_session": False},
