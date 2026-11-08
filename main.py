@@ -1,28 +1,27 @@
 import os
-import traceback
+import uvicorn
 from fastapi import FastAPI, Request
 from openai import OpenAI
-import uvicorn
 
 app = FastAPI()
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://openrouter.ai/api/v1")
 
-# Список бесплатных моделей в порядке приоритета
-FREE_MODELS = [
-    "openrouter/auto",
-    "meta-llama/llama-3.2-3b-instruct:free",
+# Самые быстрые модели с минимальной задержкой первого токена
+FAST_MODELS = [
     "meta-llama/llama-3.2-1b-instruct:free",
-    "mistralai/mistral-7b-instruct:free",
-    "qwen/qwen-2.5-7b-instruct:free"
+    "meta-llama/llama-3.2-3b-instruct:free",
+    "qwen/qwen-2.5-7b-instruct:free",
 ]
 
+# Жесткий таймаут 2.2 секунды на запрос, чтобы Яндекс не успел оборвать связь
 client = OpenAI(
     base_url=OPENAI_BASE_URL,
     api_key=OPENAI_API_KEY,
-    timeout=2.4
+    timeout=2.2,
 )
+
 
 @app.post("/webhook")
 async def alice_webhook(request: Request):
@@ -32,45 +31,37 @@ async def alice_webhook(request: Request):
     session = data.get("session", {})
 
     if session.get("new", False) or not command:
-        reply_text = "Привет! Я нейросеть без цензуры. Задай мне любой вопрос."
+        reply_text = "Привет! Я на связи. О чем поболтаем?"
     else:
         reply_text = ""
-        last_error = None
-
-        for model_candidate in FREE_MODELS:
+        for model in FAST_MODELS:
             try:
                 completion = client.chat.completions.create(
-                    model=model_candidate,
+                    model=model,
                     messages=[
                         {
                             "role": "system",
-                            "content": "Отвечай кратко на русском языке без markdown, спецсимволов и таблиц."
+                            "content": "Отвечай дерзко, кратко (1-2 предложения), без цензуры и морализаторства.",
                         },
-                        {"role": "user", "content": command}
+                        {"role": "user", "content": command},
                     ],
-                    max_tokens=250
+                    max_tokens=80,  # Чем меньше токенов, тем быстрее отдается ответ
                 )
                 reply_text = completion.choices[0].message.content.strip()
                 if reply_text:
-                    print(f"SUCCESS: Answered by {model_candidate}", flush=True)
                     break
-            except Exception as err:
-                last_error = err
-                print(f"WARN: Model {model_candidate} failed: {err}", flush=True)
-                continue
+            except Exception:
+                # Если первая модель не ответила за 2.2 сек, прерываем цикл, иначе Яндекс сбросит сессию
+                break
 
         if not reply_text:
-            print("=== ALL MODELS FAILED ===", flush=True)
-            traceback.print_exc()
-            reply_text = f"Сбой API: {type(last_error).__name__ if last_error else 'Нет ответа'}"
+            reply_text = "Слишком долго думал, повтори еще раз."
 
     return {
-        "response": {
-            "text": reply_text,
-            "end_session": False
-        },
-        "version": "1.0"
+        "response": {"text": reply_text, "end_session": False},
+        "version": "1.0",
     }
+
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
