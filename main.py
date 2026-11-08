@@ -5,14 +5,15 @@ from openai import OpenAI
 
 app = FastAPI()
 
-# Клиент Groq с быстрым откликом (~300 мс)
+# Базовый клиент Groq
 client = OpenAI(
     base_url="https://api.groq.com/openai/v1",
     api_key="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",
     timeout=2.4,
 )
 
-MODEL_NAME = "llama-3.1-8b-instant"
+# Проверенные стабильные идентификаторы моделей Groq
+MODEL_NAME = "llama-3.3-70b-versatile"
 
 
 @app.post("/webhook")
@@ -40,7 +41,23 @@ async def alice_webhook(request: Request):
             reply_text = completion.choices[0].message.content.strip()
         except Exception as err:
             print(f"GROQ ERROR: {err}", flush=True)
-            reply_text = f"Сбой API: {type(err).__name__}"
+            # Вторая попытка на ультра-легкой модели при сбое
+            try:
+                fallback = client.chat.completions.create(
+                    model="llama3-8b-8192",
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "Отвечай кратко, 1-2 предложения.",
+                        },
+                        {"role": "user", "content": command},
+                    ],
+                    max_tokens=60,
+                )
+                reply_text = fallback.choices[0].message.content.strip()
+            except Exception as fb_err:
+                print(f"FALLBACK ERROR: {fb_err}", flush=True)
+                reply_text = f"Сбой API: {type(err).__name__}"
 
     return {
         "response": {"text": reply_text, "end_session": False},
