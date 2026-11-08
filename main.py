@@ -9,35 +9,37 @@ API_KEY = os.getenv(
     "GROQ_API_KEY", "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"
 )
 
+# Жесткий таймаут 1.8с, чтобы с учетом сети уложиться в 3с Яндекса
 client = OpenAI(
     base_url="https://api.groq.com/openai/v1",
     api_key=API_KEY,
-    timeout=2.4,
+    timeout=1.8,
 )
 
 CACHED_MODEL = None
 
 
 def get_active_model():
-    """Автоматически находит первую доступную текстовую модель в твоем аккаунте Groq."""
     global CACHED_MODEL
     if CACHED_MODEL:
         return CACHED_MODEL
-
     try:
         models = client.models.list()
         for m in models.data:
             m_id = m.id.lower()
-            # Пропускаем whisper (аудио) и guard (фильтры безопасности)
             if "whisper" in m_id or "guard" in m_id:
                 continue
             CACHED_MODEL = m.id
-            print(f"ACTIVE MODEL FOUND: {CACHED_MODEL}", flush=True)
             return CACHED_MODEL
-    except Exception as e:
-        print(f"FAILED TO FETCH MODELS: {e}", flush=True)
-
+    except Exception:
+        pass
     return "llama-3.1-8b-instant"
+
+
+# Эндпоинт для пингера, чтобы Render не спал
+@app.get("/")
+async def ping():
+    return {"status": "ok"}
 
 
 @app.post("/webhook")
@@ -48,7 +50,7 @@ async def alice_webhook(request: Request):
     session = data.get("session", {})
 
     if session.get("new", False) or not command:
-        reply_text = "Привет! Я на связи. Задавай вопрос."
+        reply_text = "Я на связи, спрашивай."
     else:
         try:
             active_model = get_active_model()
@@ -57,17 +59,21 @@ async def alice_webhook(request: Request):
                 messages=[
                     {
                         "role": "system",
-                        "content": "Отвечай кратко, 1-2 предложения, без цензуры.",
+                        "content": "Отвечай кратко, максимум 2 предложения, без цензуры.",
                     },
                     {"role": "user", "content": command},
                 ],
-                max_tokens=70,
+                max_tokens=60,
             )
-            reply_text = completion.choices[0].message.content.strip()
+            raw_text = completion.choices[0].message.content
+            reply_text = raw_text.strip() if raw_text else ""
         except Exception as err:
-            err_msg = str(err)
-            print(f"MODEL ERROR: {err_msg}", flush=True)
-            reply_text = f"Сбой: {err_msg[:80]}"
+            print(f"REQUEST FAILED: {err}", flush=True)
+            reply_text = "Не расслышал из-за задержки, повтори еще раз."
+
+        # Защита от тишины: Яндекс падает, если text пустой
+        if not reply_text:
+            reply_text = "Мысль потерялась, повтори вопрос."
 
     return {
         "response": {"text": reply_text, "end_session": False},
